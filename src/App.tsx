@@ -144,10 +144,21 @@ export default function App() {
   const analyzeQuestion = async () => {
     if (!croppedImage) return;
 
+    // Check image size (Vercel limit is 4.5MB)
+    const base64Length = croppedImage.length;
+    const sizeInMB = (base64Length * (3/4)) / (1024 * 1024);
+    
+    if (sizeInMB > 4) {
+      setError("图片体积过大（超过4MB），请尝试缩小裁剪范围或降低图片质量。");
+      setStatus("error");
+      return;
+    }
+
     setStatus("loading");
     setError(null);
 
     try {
+      console.log("Sending request to /api/analyze...");
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: {
@@ -167,7 +178,19 @@ export default function App() {
       } else {
         const text = await response.text();
         console.error("Server returned non-JSON response:", text);
-        throw new Error("服务器繁忙或配置错误，请检查 API Key 是否设置正确。");
+        
+        // Try to diagnose the issue
+        try {
+          const debugRes = await fetch("/api/debug");
+          const debugData = await debugRes.json();
+          if (!debugData.hasApiKey) {
+            throw new Error("服务器未配置 DASHSCOPE_API_KEY，请在环境变量中设置。");
+          }
+        } catch (e) {
+          console.error("Debug check failed:", e);
+        }
+        
+        throw new Error(`服务器响应异常 (${response.status})。可能是图片过大或配置错误。`);
       }
 
       if (!response.ok) {

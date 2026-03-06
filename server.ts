@@ -9,6 +9,14 @@ const PORT = 3000;
 app.use(express.json({ limit: '50mb' }));
 
 // API routes
+app.get("/api/debug", (req, res) => {
+  res.json({
+    env: process.env.NODE_ENV,
+    hasApiKey: !!process.env.DASHSCOPE_API_KEY,
+    apiKeyLength: process.env.DASHSCOPE_API_KEY?.length || 0,
+  });
+});
+
 app.post("/api/analyze", async (req, res) => {
   try {
     const { image, grade } = req.body;
