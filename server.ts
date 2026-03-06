@@ -79,7 +79,7 @@ app.post("/api/analyze", async (req, res) => {
     let result;
     try {
       result = await genAI.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-3-flash-preview",
         contents: [{
           parts: [
             { inlineData: { mimeType, data: base64Data } },
