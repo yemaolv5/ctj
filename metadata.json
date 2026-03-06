@@ -1,0 +1,5 @@
+{
+  "name": "有云错题姐",
+  "description": "AI 驱动的错题解析与变式题生成工具，支持 OCR 识别、知识点提取、原图展示及 Word 导出。",
+  "requestFramePermissions": ["camera"]
+}
