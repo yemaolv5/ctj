@@ -80,21 +80,28 @@ app.post("/api/analyze", async (req, res) => {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullContent = "";
+        let lineBuffer = "";
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n');
+          lineBuffer += decoder.decode(value, { stream: true });
+          const lines = lineBuffer.split('\n');
+          lineBuffer = lines.pop() || "";
+
           for (const line of lines) {
-            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === 'data: [DONE]') continue;
+            
+            if (trimmed.startsWith('data: ')) {
               try {
-                const json = JSON.parse(line.slice(6));
+                const json = JSON.parse(trimmed.slice(6));
                 const content = json.choices?.[0]?.delta?.content;
                 if (content) {
                   fullContent += content;
-                  res.write(`data: ${JSON.stringify({ chunk: fullContent })}\n\n`);
+                  // 只发送增量片段 (delta)
+                  res.write(`data: ${JSON.stringify({ delta: content })}\n\n`);
                 }
               } catch (e) { /* 忽略解析错误 */ }
             }

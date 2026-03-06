@@ -101,6 +101,7 @@ export default function App() {
   const [completedCrop, setCompletedCrop] = useState<Area | null>(null);
 
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [streamingText, setStreamingText] = useState("");
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -174,10 +175,12 @@ export default function App() {
       let data;
       
       if (contentType && contentType.includes("text/event-stream")) {
-        // 处理流式响应 (Qwen)
+        // 处理流式响应 (Qwen/SiliconFlow)
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
-        let fullText = "";
+        let accumulatedText = "";
+        let lineBuffer = "";
+        setStreamingText("");
 
         if (!reader) throw new Error("无法读取服务器流");
 
@@ -185,20 +188,24 @@ export default function App() {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value);
-          const lines = chunk.split("\n");
+          lineBuffer += decoder.decode(value, { stream: true });
+          const lines = lineBuffer.split("\n");
+          lineBuffer = lines.pop() || "";
+
           for (const line of lines) {
             if (line.startsWith("data: ")) {
               try {
                 const streamData = JSON.parse(line.slice(6));
-                if (streamData.chunk) {
-                  fullText = streamData.chunk;
+                if (streamData.delta) {
+                  accumulatedText += streamData.delta;
+                  setStreamingText(accumulatedText);
                 }
                 if (streamData.done) {
                   const jsonMatch = streamData.full.match(/\{[\s\S]*\}/);
                   const finalData = JSON.parse(jsonMatch ? jsonMatch[0] : streamData.full);
                   setResult(finalData);
                   setStatus("success");
+                  setStreamingText("");
                   confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
                   return;
                 }
@@ -299,7 +306,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-800">有云错题姐</h1>
-              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v3.1</p>
+              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v3.2</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -447,9 +454,16 @@ export default function App() {
                 <Loader2 size={48} className="text-indigo-600 animate-spin" />
                 <div className="absolute inset-0 blur-xl bg-indigo-400/20 animate-pulse rounded-full"></div>
               </div>
-              <div className="text-center">
-                <h3 className="text-lg font-bold text-slate-800">AI 正在深度解析中...</h3>
-                <p className="text-slate-500 text-sm mt-1">正在进行 OCR 识别、知识点提取及变式题生成</p>
+              <div className="text-center space-y-2">
+                <h3 className="text-lg font-bold text-slate-800 animate-pulse">AI 正在深度解析中...</h3>
+                <p className="text-slate-500 text-sm">正在进行 OCR 识别、知识点提取及变式题生成</p>
+                {streamingText && (
+                  <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-100 max-w-md mx-auto">
+                    <p className="text-xs text-slate-400 text-left line-clamp-3 font-mono">
+                      {streamingText}
+                    </p>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
