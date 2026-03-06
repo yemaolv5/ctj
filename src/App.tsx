@@ -159,12 +159,21 @@ export default function App() {
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "解析失败，请重试");
+      const contentType = response.headers.get("content-type");
+      let data;
+      
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        console.error("Server returned non-JSON response:", text);
+        throw new Error("服务器繁忙或配置错误，请检查 API Key 是否设置正确。");
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "解析失败，请重试");
+      }
+
       setResult(data);
       setStatus("success");
       confetti({

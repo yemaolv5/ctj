@@ -51,7 +51,7 @@ app.post("/api/analyze", async (req, res) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "qwen-vl-max-latest",
+        model: "qwen-vl-max",
         input: {
           messages: [
             {
@@ -70,9 +70,15 @@ app.post("/api/analyze", async (req, res) => {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error("DashScope API Error:", errorData);
-      return res.status(response.status).json({ error: "Failed to call Alibaba Cloud API", details: errorData });
+      const errorText = await response.text();
+      console.error("DashScope API Error Response:", errorText);
+      let errorDetail;
+      try {
+        errorDetail = JSON.parse(errorText);
+      } catch (e) {
+        errorDetail = errorText;
+      }
+      return res.status(response.status).json({ error: "阿里云接口调用失败", details: errorDetail });
     }
 
     const data = await response.json();
