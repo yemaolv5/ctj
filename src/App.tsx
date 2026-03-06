@@ -195,7 +195,7 @@ export default function App() {
           debugInfo = " (无法获取诊断 JSON)";
         }
         
-        throw new Error(`[V2.2] 服务器响应异常 (${response.status})${debugInfo}。响应片段: ${serverResponseSnippet}...`);
+        throw new Error(`[V2.3] 服务器响应异常 (${response.status})${debugInfo}。响应片段: ${serverResponseSnippet}...`);
       }
 
       if (!response.ok) {
@@ -259,7 +259,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-800">有云错题姐</h1>
-              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v2.2</p>
+              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v2.3</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

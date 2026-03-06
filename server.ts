@@ -3,9 +3,13 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, ImageRun } from "docx";
 import multer from "multer";
+import { GoogleGenAI } from "@google/genai";
 
 const app = express();
 const PORT = 3000;
+
+// Initialize Gemini
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 app.use(express.json({ limit: '50mb' }));
 
@@ -13,24 +17,24 @@ app.use(express.json({ limit: '50mb' }));
 app.get("/api/debug", (req, res) => {
   res.json({
     env: process.env.NODE_ENV,
-    hasApiKey: !!process.env.DASHSCOPE_API_KEY,
-    apiKeyLength: process.env.DASHSCOPE_API_KEY?.length || 0,
+    hasGeminiKey: !!process.env.GEMINI_API_KEY,
+    geminiKeyLength: process.env.GEMINI_API_KEY?.length || 0,
   });
 });
 
 app.post("/api/analyze", async (req, res) => {
   try {
     const { image, grade } = req.body;
-    const apiKey = process.env.DASHSCOPE_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
 
     console.log(`[DEBUG] Analyze request received at ${new Date().toISOString()}`);
     console.log(`[DEBUG] Grade: ${grade}`);
     console.log(`[DEBUG] Image data length: ${image?.length || 0}`);
-    console.log(`[DEBUG] API Key configured: ${!!apiKey}`);
+    console.log(`[DEBUG] Gemini API Key configured: ${!!apiKey}`);
 
     if (!apiKey) {
-      console.error("[ERROR] DASHSCOPE_API_KEY is missing");
-      return res.status(500).json({ error: "服务器未配置 DASHSCOPE_API_KEY，请在环境变量中设置。" });
+      console.error("[ERROR] GEMINI_API_KEY is missing");
+      return res.status(500).json({ error: "服务器未配置 GEMINI_API_KEY，请在环境变量中设置。" });
     }
 
     const prompt = `你是一个专业的教育专家。请分析这张包含${grade}错题的图片。
@@ -59,59 +63,49 @@ app.post("/api/analyze", async (req, res) => {
 }
 只返回 JSON 内容，不要包含任何 Markdown 代码块标记或额外文字。`;
 
-    const response = await fetch("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "qwen-vl-max",
-        input: {
-          messages: [
+    // Extract base64 data and mime type
+    const matches = image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      return res.status(400).json({ error: "无效的图片格式" });
+    }
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+
+    const result = await genAI.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: [
+        {
+          parts: [
             {
-              role: "user",
-              content: [
-                { image: image },
-                { text: prompt }
-              ]
-            }
+              inlineData: {
+                mimeType: mimeType,
+                data: base64Data
+              }
+            },
+            { text: prompt }
           ]
-        },
-        parameters: {
-          result_format: "message"
         }
-      })
+      ]
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("DashScope API Error Response:", errorText);
-      let errorDetail;
-      try {
-        errorDetail = JSON.parse(errorText);
-      } catch (e) {
-        errorDetail = errorText;
-      }
-      return res.status(response.status).json({ error: "阿里云接口调用失败", details: errorDetail });
+    const responseText = result.text;
+    console.log("[DEBUG] Gemini Raw Response:", responseText);
+
+    let data;
+    try {
+      // Clean up potential markdown blocks if the model ignored instructions
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      const cleanJson = jsonMatch ? jsonMatch[0] : responseText;
+      data = JSON.parse(cleanJson);
+    } catch (e) {
+      console.error("Failed to parse Gemini response as JSON:", responseText);
+      return res.status(500).json({ error: "解析结果格式错误", raw: responseText });
     }
 
-    const data = await response.json();
-    const content = data.output.choices[0].message.content[0].text;
-    
-    // Clean up the response if it contains markdown blocks
-    const jsonStr = content.replace(/```json\n?/, "").replace(/```\n?$/, "").trim();
-    
-    try {
-      const result = JSON.parse(jsonStr);
-      res.json(result);
-    } catch (parseError) {
-      console.error("Failed to parse JSON from model:", content);
-      res.status(500).json({ error: "Failed to parse model response as JSON", raw: content });
-    }
-  } catch (error) {
-    console.error("Error in /api/analyze:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.json(data);
+  } catch (error: any) {
+    console.error("[ERROR] Analyze failed:", error);
+    res.status(500).json({ error: "解析失败", details: error.message });
   }
 });
 
