@@ -60,7 +60,7 @@ app.post("/api/analyze", async (req, res) => {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            model: "Qwen/Qwen2-VL-72B-Instruct", // 硅基流动推荐的视觉模型
+            model: "Qwen/Qwen2.5-VL-7B-Instruct", // 升级到最新的 Qwen2.5-VL 模型
             messages: [
               {
                 role: "user",

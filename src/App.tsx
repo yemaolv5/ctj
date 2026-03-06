@@ -306,7 +306,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-800">有云错题姐</h1>
-              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v3.2</p>
+              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v3.3</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
