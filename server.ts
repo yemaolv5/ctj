@@ -53,6 +53,7 @@ app.post("/api/analyze", async (req, res) => {
       res.setHeader('Connection', 'keep-alive');
 
       try {
+        console.log("[INFO] Attempting SiliconFlow with Qwen2.5-VL...");
         const response = await fetch("https://api.siliconflow.cn/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -60,7 +61,7 @@ app.post("/api/analyze", async (req, res) => {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            model: "Qwen/Qwen2.5-VL-7B-Instruct", // 升级到最新的 Qwen2.5-VL 模型
+            model: "Qwen/Qwen2.5-VL-7B-Instruct",
             messages: [
               {
                 role: "user",
@@ -71,49 +72,50 @@ app.post("/api/analyze", async (req, res) => {
               }
             ],
             stream: true,
-            response_format: { type: "json_object" }
+            temperature: 0.7
           })
         });
 
-        if (!response.body) throw new Error("SiliconFlow response body is null");
-        
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullContent = "";
-        let lineBuffer = "";
+        if (response.ok && response.body) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let fullContent = "";
+          let lineBuffer = "";
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          lineBuffer += decoder.decode(value, { stream: true });
-          const lines = lineBuffer.split('\n');
-          lineBuffer = lines.pop() || "";
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed === 'data: [DONE]') continue;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
             
-            if (trimmed.startsWith('data: ')) {
-              try {
-                const json = JSON.parse(trimmed.slice(6));
-                const content = json.choices?.[0]?.delta?.content;
-                if (content) {
-                  fullContent += content;
-                  // 只发送增量片段 (delta)
-                  res.write(`data: ${JSON.stringify({ delta: content })}\n\n`);
-                }
-              } catch (e) { /* 忽略解析错误 */ }
+            lineBuffer += decoder.decode(value, { stream: true });
+            const lines = lineBuffer.split('\n');
+            lineBuffer = lines.pop() || "";
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === 'data: [DONE]') continue;
+              
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const json = JSON.parse(trimmed.slice(6));
+                  const content = json.choices?.[0]?.delta?.content;
+                  if (content) {
+                    fullContent += content;
+                    res.write(`data: ${JSON.stringify({ delta: content })}\n\n`);
+                  }
+                } catch (e) { /* 忽略解析错误 */ }
+              }
             }
           }
+          
+          res.write(`data: ${JSON.stringify({ done: true, full: fullContent })}\n\n`);
+          res.end();
+          return;
+        } else {
+          const errText = await response.text();
+          console.warn("[WARN] SiliconFlow failed, falling back...", errText);
         }
-        
-        res.write(`data: ${JSON.stringify({ done: true, full: fullContent })}\n\n`);
-        res.end();
-        return;
       } catch (sfError: any) {
-        console.error("[ERROR] SiliconFlow API failed:", sfError);
-        return res.status(500).write(`data: ${JSON.stringify({ error: "硅基流动接口调用失败", details: sfError.message })}\n\n`);
+        console.error("[ERROR] SiliconFlow Exception:", sfError.message);
       }
     }
 
