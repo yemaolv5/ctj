@@ -22,14 +22,14 @@ app.post("/api/analyze", async (req, res) => {
     const { image, grade } = req.body;
     const apiKey = process.env.DASHSCOPE_API_KEY;
 
-    console.log("Analyze request received. Grade:", grade);
-    console.log("API Key present:", !!apiKey);
-    if (apiKey) {
-      console.log("API Key prefix:", apiKey.substring(0, 4) + "...");
-    }
+    console.log(`[DEBUG] Analyze request received at ${new Date().toISOString()}`);
+    console.log(`[DEBUG] Grade: ${grade}`);
+    console.log(`[DEBUG] Image data length: ${image?.length || 0}`);
+    console.log(`[DEBUG] API Key configured: ${!!apiKey}`);
 
     if (!apiKey) {
-      return res.status(500).json({ error: "DASHSCOPE_API_KEY is not set on the server" });
+      console.error("[ERROR] DASHSCOPE_API_KEY is missing");
+      return res.status(500).json({ error: "服务器未配置 DASHSCOPE_API_KEY，请在环境变量中设置。" });
     }
 
     const prompt = `你是一个专业的教育专家。请分析这张包含${grade}错题的图片。
@@ -220,6 +220,12 @@ app.post("/api/export-word", async (req, res) => {
     console.error("Error generating Word document:", error);
     res.status(500).json({ error: "Failed to generate Word document" });
   }
+});
+
+// Global error handler
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("[GLOBAL ERROR]", err);
+  res.status(500).json({ error: "服务器内部错误", details: err.message });
 });
 
 async function startServer() {

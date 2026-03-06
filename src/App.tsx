@@ -193,7 +193,7 @@ export default function App() {
           debugInfo = " (无法获取诊断信息)";
         }
         
-        throw new Error(`[V2] 服务器响应异常 (${response.status})${debugInfo}。请尝试缩小裁剪范围。`);
+        throw new Error(`[V2.1] 服务器响应异常 (${response.status})${debugInfo}。请尝试缩小裁剪范围，或在手机浏览器中清除缓存后重试。`);
       }
 
       if (!response.ok) {
@@ -255,7 +255,10 @@ export default function App() {
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-indigo-200 shadow-lg">
               <BrainCircuit size={24} />
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-800">有云错题姐</h1>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-slate-800">有云错题姐</h1>
+              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v2.1</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <select 
