@@ -184,18 +184,18 @@ export default function App() {
         let serverResponseSnippet = "";
         try {
           serverResponseSnippet = text.substring(0, 100);
+          const pingRes = await fetch("/api/ping");
+          const pingText = await pingRes.text();
+          
           const debugRes = await fetch("/api/debug");
           const debugData = await debugRes.json();
-          if (!debugData.hasApiKey) {
-            debugInfo = " (检测到服务器未配置 API Key)";
-          } else {
-            debugInfo = ` (服务器已配置 Key, 长度:${debugData.apiKeyLength})`;
-          }
+          
+          debugInfo = ` (Ping:${pingText}, Key:${debugData.hasGeminiKey ? '已配置' : '未配置'})`;
         } catch (e) {
-          debugInfo = " (无法获取诊断 JSON)";
+          debugInfo = " (诊断接口失效)";
         }
         
-        throw new Error(`[V2.3] 服务器响应异常 (${response.status})${debugInfo}。响应片段: ${serverResponseSnippet}...`);
+        throw new Error(`[V2.4] 服务器响应异常 (${response.status})${debugInfo}。响应片段: ${serverResponseSnippet}...`);
       }
 
       if (!response.ok) {
@@ -259,7 +259,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-800">有云错题姐</h1>
-              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v2.3</p>
+              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v2.4</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
