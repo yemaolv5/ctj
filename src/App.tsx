@@ -157,6 +157,13 @@ export default function App() {
 
     setStatus("loading");
     setError(null);
+    setStreamingText("");
+
+    // 设置全局超时检测 (45秒)
+    const timeoutId = setTimeout(() => {
+      setStatus("error");
+      setError("服务器响应超时，请检查网络或重试。AI 解析可能需要较长时间，请确保网络通畅。");
+    }, 45000);
 
     try {
       console.log("Sending request to /api/analyze...");
@@ -180,17 +187,8 @@ export default function App() {
         const decoder = new TextDecoder();
         let accumulatedText = "";
         let lineBuffer = "";
-        setStreamingText("");
 
         if (!reader) throw new Error("无法读取服务器流");
-
-        // 设置超时检测
-        const timeoutId = setTimeout(() => {
-          if (accumulatedText === "") {
-            setStatus("error");
-            setError("服务器响应超时，请检查网络或重试。");
-          }
-        }, 30000);
 
         try {
           while (true) {
@@ -234,8 +232,10 @@ export default function App() {
         }
         return;
       } else if (contentType && contentType.includes("application/json")) {
+        clearTimeout(timeoutId);
         data = await response.json();
       } else {
+        clearTimeout(timeoutId);
         const text = await response.text();
         console.error("Server returned non-JSON response:", text);
         
@@ -255,7 +255,7 @@ export default function App() {
           debugInfo = " (诊断接口失效)";
         }
         
-        throw new Error(`[V3.0] 服务器响应异常 (${response.status})${debugInfo}。响应片段: ${serverResponseSnippet}...`);
+        throw new Error(`服务器响应异常 (${response.status})${debugInfo}。响应片段: ${serverResponseSnippet}...`);
       }
 
       if (!response.ok) {
@@ -320,7 +320,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-800">有云错题姐</h1>
-              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v3.4</p>
+              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v3.5</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

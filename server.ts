@@ -54,6 +54,9 @@ app.post("/api/analyze", async (req, res) => {
 
       try {
         console.log("[INFO] Attempting SiliconFlow with Qwen2.5-VL...");
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s 超时
+
         const response = await fetch("https://api.siliconflow.cn/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -73,8 +76,10 @@ app.post("/api/analyze", async (req, res) => {
             ],
             stream: true,
             temperature: 0.7
-          })
+          }),
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         if (response.ok && response.body) {
           const reader = response.body.getReader();
@@ -129,6 +134,9 @@ app.post("/api/analyze", async (req, res) => {
       res.setHeader('Connection', 'keep-alive');
 
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s 超时
+
         const response = await fetch("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation", {
           method: "POST",
           headers: {
@@ -153,8 +161,10 @@ app.post("/api/analyze", async (req, res) => {
               result_format: "message",
               incremental_output: true
             }
-          })
+          }),
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         if (!response.body) throw new Error("Qwen response body is null");
         
