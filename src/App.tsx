@@ -199,7 +199,8 @@ export default function App() {
       }
 
       if (!response.ok) {
-        throw new Error(data.error || "解析失败，请重试");
+        const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || "解析失败，请重试");
+        throw new Error(errorMsg);
       }
 
       setResult(data);
@@ -259,7 +260,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-800">有云错题姐</h1>
-              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v2.4</p>
+              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v2.5</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

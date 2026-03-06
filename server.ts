@@ -17,11 +17,13 @@ app.get("/api/ping", (req, res) => {
 // API routes
 app.get("/api/debug", (req, res) => {
   try {
+    const apiKey = process.env.GEMINI_API_KEY || "";
     res.json({
       status: "ok",
       env: process.env.NODE_ENV,
-      hasGeminiKey: !!process.env.GEMINI_API_KEY,
-      geminiKeyLength: process.env.GEMINI_API_KEY?.length || 0,
+      hasGeminiKey: !!apiKey,
+      geminiKeyLength: apiKey.length,
+      geminiKeyPrefix: apiKey.substring(0, 4), // Should be AIza
       time: new Date().toISOString()
     });
   } catch (e: any) {
@@ -74,15 +76,29 @@ app.post("/api/analyze", async (req, res) => {
     const mimeType = matches[1];
     const base64Data = matches[2];
 
-    const result = await genAI.models.generateContent({
-      model: "gemini-1.5-flash",
-      contents: [{
-        parts: [
-          { inlineData: { mimeType, data: base64Data } },
-          { text: prompt }
-        ]
-      }]
-    });
+    let result;
+    try {
+      result = await genAI.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: [{
+          parts: [
+            { inlineData: { mimeType, data: base64Data } },
+            { text: prompt }
+          ]
+        }]
+      });
+    } catch (apiError: any) {
+      console.error("[ERROR] Gemini API call failed:", apiError);
+      return res.status(500).json({ 
+        error: "Gemini 接口调用失败", 
+        details: apiError.message || "未知 API 错误",
+        code: apiError.status || apiError.code
+      });
+    }
+
+    if (!result || !result.text) {
+      return res.status(500).json({ error: "Gemini 返回了空响应", details: "可能是由于安全限制或内容审核导致响应被拦截。" });
+    }
 
     const responseText = result.text;
     let data;
@@ -96,7 +112,7 @@ app.post("/api/analyze", async (req, res) => {
     res.json(data);
   } catch (error: any) {
     console.error("[ERROR] Analyze failed:", error);
-    res.status(500).json({ error: "解析失败", details: error.message });
+    res.status(500).json({ error: "解析失败", details: error.message || "服务器内部错误" });
   }
 });
 
