@@ -182,6 +182,9 @@ export default function App() {
       let data;
       
       if (contentType && contentType.includes("text/event-stream")) {
+        // 只要收到了流式响应头，就清除全局超时，因为后续会有增量数据更新
+        clearTimeout(timeoutId);
+        
         // 处理流式响应 (Qwen/SiliconFlow)
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
@@ -320,7 +323,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-800">有云错题姐</h1>
-              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v3.5</p>
+              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v3.6</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

@@ -42,18 +42,31 @@ app.post("/api/analyze", async (req, res) => {
       return res.status(500).json({ error: "服务器未配置任何 AI 密钥 (GEMINI_API_KEY, DASHSCOPE_API_KEY 或 SILICONFLOW_API_KEY)。" });
     }
 
-    const prompt = `你是一个专业的教育专家。请分析这张包含${grade}错题的图片。请提取题目内容、知识点、详细解答，并提供三道不同难度的变式题。`;
+    const prompt = `你是一个专业的教育专家。请分析这张包含${grade}错题的图片。
+请务必以 JSON 格式返回，包含以下字段：
+{
+  "ocrText": "题目内容",
+  "knowledgePoints": ["知识点1", "知识点2"],
+  "solution": "详细解答",
+  "similarQuestions": [
+    { "difficulty": "简单/中等/困难", "question": "变式题内容", "analysis": "变式题解析" }
+  ]
+}
+请直接输出 JSON，不要包含任何 Markdown 代码块标记。`;
+
+    // 立即设置 SSE 响应头，防止 Vercel 10s 超时
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.write(`data: ${JSON.stringify({ delta: "AI 引擎启动中...\n" })}\n\n`);
 
     // 1. 优先使用硅基流动 (SiliconFlow) - OpenAI 兼容接口
     if (siliconKey) {
       console.log("[DEBUG] Using SiliconFlow Engine (Streaming Mode)");
       
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-
       try {
         console.log("[INFO] Attempting SiliconFlow with Qwen2.5-VL...");
+        res.write(`data: ${JSON.stringify({ delta: "正在通过硅基流动进行 OCR 识别...\n" })}\n\n`);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s 超时
 
@@ -118,21 +131,19 @@ app.post("/api/analyze", async (req, res) => {
         } else {
           const errText = await response.text();
           console.warn("[WARN] SiliconFlow failed, falling back...", errText);
+          res.write(`data: ${JSON.stringify({ delta: "硅基流动调用失败，正在尝试备用引擎...\n" })}\n\n`);
         }
       } catch (sfError: any) {
         console.error("[ERROR] SiliconFlow Exception:", sfError.message);
+        res.write(`data: ${JSON.stringify({ delta: `硅基流动异常: ${sfError.message}，正在尝试备用引擎...\n` })}\n\n`);
       }
     }
 
     // 2. 次选通义千问 (DashScope)
     if (qwenKey) {
       console.log("[DEBUG] Using Qwen-VL-Max Engine (Streaming Mode)");
+      res.write(`data: ${JSON.stringify({ delta: "正在通过通义千问进行解析...\n" })}\n\n`);
       
-      // 设置 SSE 响应头，防止 Vercel 超时
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s 超时
@@ -166,85 +177,111 @@ app.post("/api/analyze", async (req, res) => {
         });
         clearTimeout(timeoutId);
 
-        if (!response.body) throw new Error("Qwen response body is null");
-        
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullContent = "";
+        if (response.ok && response.body) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let fullContent = "";
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const chunk = decoder.decode(value);
-          // 简单的 SSE 解析逻辑
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            if (line.startsWith('data:')) {
-              try {
-                const json = JSON.parse(line.slice(5));
-                const content = json.output?.choices?.[0]?.message?.content;
-                if (content && typeof content === 'string') {
-                  fullContent = content;
-                  // 将内容实时发给前端
-                  res.write(`data: ${JSON.stringify({ chunk: content })}\n\n`);
-                }
-              } catch (e) { /* 忽略心跳或非 JSON 行 */ }
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+              if (line.startsWith('data:')) {
+                try {
+                  const json = JSON.parse(line.slice(5));
+                  const content = json.output?.choices?.[0]?.message?.content;
+                  if (content && typeof content === 'string') {
+                    fullContent = content;
+                    res.write(`data: ${JSON.stringify({ delta: content })}\n\n`);
+                  }
+                } catch (e) { /* 忽略心跳或非 JSON 行 */ }
+              }
             }
           }
+          
+          res.write(`data: ${JSON.stringify({ done: true, full: fullContent })}\n\n`);
+          res.end();
+          return;
+        } else {
+          const errText = await response.text();
+          console.warn("[WARN] Qwen failed, falling back...", errText);
+          res.write(`data: ${JSON.stringify({ delta: "通义千问调用失败，正在尝试备用引擎...\n" })}\n\n`);
         }
-        
-        // 最后发送一个完成标记，包含完整解析结果
-        res.write(`data: ${JSON.stringify({ done: true, full: fullContent })}\n\n`);
-        res.end();
-        return;
       } catch (qwenError: any) {
         console.error("[ERROR] Qwen API failed:", qwenError);
-        // 如果 Qwen 失败且有 Gemini Key，可以降级到 Gemini，但这里我们直接报错
-        return res.status(500).write(`data: ${JSON.stringify({ error: "Qwen 接口调用失败", details: qwenError.message })}\n\n`);
+        res.write(`data: ${JSON.stringify({ delta: `通义千问异常: ${qwenError.message}，正在尝试备用引擎...\n` })}\n\n`);
       }
     }
 
-    // 默认使用 Gemini (国外环境)
-    const genAI = new GoogleGenAI({ apiKey: geminiKey! });
-    const result = await genAI.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: [{
-        parts: [
-          { inlineData: { mimeType: image.match(/^data:([A-Za-z-+\/]+);base64/)[1], data: image.split(',')[1] } },
-          { text: prompt }
-        ]
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT",
-          properties: {
-            ocrText: { type: "STRING" },
-            knowledgePoints: { type: "ARRAY", items: { type: "STRING" } },
-            solution: { type: "STRING" },
-            similarQuestions: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: {
-                  difficulty: { type: "STRING" },
-                  question: { type: "STRING" },
-                  analysis: { type: "STRING" }
-                },
-                required: ["difficulty", "question", "analysis"]
+    // 3. 最后保底使用 Gemini (国外环境)
+    if (geminiKey) {
+      console.log("[DEBUG] Using Gemini Engine (Fallback)");
+      res.write(`data: ${JSON.stringify({ delta: "正在通过 Gemini 进行最终解析...\n" })}\n\n`);
+      
+      try {
+        const genAI = new GoogleGenAI({ apiKey: geminiKey });
+        const result = await genAI.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [{
+          parts: [
+            { inlineData: { mimeType: image.match(/^data:([A-Za-z-+\/]+);base64/)[1], data: image.split(',')[1] } },
+            { text: prompt }
+          ]
+        }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              ocrText: { type: "STRING" },
+              knowledgePoints: { type: "ARRAY", items: { type: "STRING" } },
+              solution: { type: "STRING" },
+              similarQuestions: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    difficulty: { type: "STRING" },
+                    question: { type: "STRING" },
+                    analysis: { type: "STRING" }
+                  },
+                  required: ["difficulty", "question", "analysis"]
+                }
               }
-            }
-          },
-          required: ["ocrText", "knowledgePoints", "solution", "similarQuestions"]
+            },
+            required: ["ocrText", "knowledgePoints", "solution", "similarQuestions"]
+          }
         }
-      }
-    });
+      });
 
-    res.json(JSON.parse(result.text));
-  } catch (error: any) {
+      const text = result.text;
+      if (!text) throw new Error("Gemini 返回内容为空");
+      
+      res.write(`data: ${JSON.stringify({ done: true, full: text })}\n\n`);
+      res.end();
+      return;
+    } catch (geminiError: any) {
+      console.error("[ERROR] Gemini API failed:", geminiError);
+      res.write(`data: ${JSON.stringify({ error: "所有 AI 引擎均调用失败", details: geminiError.message })}\n\n`);
+      res.end();
+      return;
+    }
+  }
+
+  // 如果走到这里，说明没有任何引擎被调用（例如 key 都不存在，虽然前面有拦截，但为了保险）
+  res.write(`data: ${JSON.stringify({ error: "未配置有效的 AI 引擎或所有引擎均不可用" })}\n\n`);
+  res.end();
+} catch (error: any) {
     console.error("[ERROR] Analyze failed:", error);
-    res.status(500).json({ error: "解析失败", details: error.message || "服务器内部错误" });
+    if (!res.headersSent) {
+      res.status(500).json({ error: "解析失败", details: error.message || "服务器内部错误" });
+    } else {
+      res.write(`data: ${JSON.stringify({ error: "解析失败", details: error.message })}\n\n`);
+      res.end();
+    }
   }
 });
 
