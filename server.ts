@@ -60,6 +60,19 @@ app.post("/api/analyze", async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.write(`data: ${JSON.stringify({ delta: "AI 引擎启动中...\n" })}\n\n`);
 
+    // 启动心跳，防止连接断开
+    const heartbeat = setInterval(() => {
+      res.write(`: heartbeat\n\n`);
+    }, 5000);
+
+    // 确保在请求结束时清除心跳
+    res.on('close', () => clearInterval(heartbeat));
+    const originalEnd = res.end;
+    res.end = function(...args: any[]) {
+      clearInterval(heartbeat);
+      return originalEnd.apply(this, args);
+    };
+
     // 1. 优先使用硅基流动 (SiliconFlow) - OpenAI 兼容接口
     if (siliconKey) {
       console.log("[DEBUG] Using SiliconFlow Engine (Streaming Mode)");
@@ -223,53 +236,60 @@ app.post("/api/analyze", async (req, res) => {
       
       try {
         const genAI = new GoogleGenAI({ apiKey: geminiKey });
-        const result = await genAI.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [{
-          parts: [
-            { inlineData: { mimeType: image.match(/^data:([A-Za-z-+\/]+);base64/)[1], data: image.split(',')[1] } },
-            { text: prompt }
-          ]
-        }],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              ocrText: { type: "STRING" },
-              knowledgePoints: { type: "ARRAY", items: { type: "STRING" } },
-              solution: { type: "STRING" },
-              similarQuestions: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    difficulty: { type: "STRING" },
-                    question: { type: "STRING" },
-                    analysis: { type: "STRING" }
-                  },
-                  required: ["difficulty", "question", "analysis"]
+        // 为 Gemini 增加超时控制 (30s)
+        const geminiPromise = genAI.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: [{
+            parts: [
+              { inlineData: { mimeType: image.match(/^data:([A-Za-z-+\/]+);base64/)[1], data: image.split(',')[1] } },
+              { text: prompt }
+            ]
+          }],
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                ocrText: { type: "STRING" },
+                knowledgePoints: { type: "ARRAY", items: { type: "STRING" } },
+                solution: { type: "STRING" },
+                similarQuestions: {
+                  type: "ARRAY",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      difficulty: { type: "STRING" },
+                      question: { type: "STRING" },
+                      analysis: { type: "STRING" }
+                    },
+                    required: ["difficulty", "question", "analysis"]
+                  }
                 }
-              }
-            },
-            required: ["ocrText", "knowledgePoints", "solution", "similarQuestions"]
+              },
+              required: ["ocrText", "knowledgePoints", "solution", "similarQuestions"]
+            }
           }
-        }
-      });
+        });
 
-      const text = result.text;
-      if (!text) throw new Error("Gemini 返回内容为空");
-      
-      res.write(`data: ${JSON.stringify({ done: true, full: text })}\n\n`);
-      res.end();
-      return;
-    } catch (geminiError: any) {
-      console.error("[ERROR] Gemini API failed:", geminiError);
-      res.write(`data: ${JSON.stringify({ error: "所有 AI 引擎均调用失败", details: geminiError.message })}\n\n`);
-      res.end();
-      return;
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Gemini 调用超时 (30s)")), 30000)
+        );
+
+        const result: any = await Promise.race([geminiPromise, timeoutPromise]);
+
+        const text = result.text;
+        if (!text) throw new Error("Gemini 返回内容为空");
+        
+        res.write(`data: ${JSON.stringify({ done: true, full: text })}\n\n`);
+        res.end();
+        return;
+      } catch (geminiError: any) {
+        console.error("[ERROR] Gemini API failed:", geminiError);
+        res.write(`data: ${JSON.stringify({ error: "所有 AI 引擎均调用失败", details: geminiError.message })}\n\n`);
+        res.end();
+        return;
+      }
     }
-  }
 
   // 如果走到这里，说明没有任何引擎被调用（例如 key 都不存在，虽然前面有拦截，但为了保险）
   res.write(`data: ${JSON.stringify({ error: "未配置有效的 AI 引擎或所有引擎均不可用" })}\n\n`);
