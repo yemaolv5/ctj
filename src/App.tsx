@@ -173,7 +173,46 @@ export default function App() {
       const contentType = response.headers.get("content-type");
       let data;
       
-      if (contentType && contentType.includes("application/json")) {
+      if (contentType && contentType.includes("text/event-stream")) {
+        // 处理流式响应 (Qwen)
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let fullText = "";
+
+        if (!reader) throw new Error("无法读取服务器流");
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const streamData = JSON.parse(line.slice(6));
+                if (streamData.chunk) {
+                  fullText = streamData.chunk;
+                }
+                if (streamData.done) {
+                  const jsonMatch = streamData.full.match(/\{[\s\S]*\}/);
+                  const finalData = JSON.parse(jsonMatch ? jsonMatch[0] : streamData.full);
+                  setResult(finalData);
+                  setStatus("success");
+                  confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+                  return;
+                }
+                if (streamData.error) {
+                  throw new Error(`${streamData.error}: ${streamData.details}`);
+                }
+              } catch (e) {
+                console.error("Stream parse error:", e);
+              }
+            }
+          }
+        }
+        return;
+      } else if (contentType && contentType.includes("application/json")) {
         data = await response.json();
       } else {
         const text = await response.text();
@@ -195,7 +234,7 @@ export default function App() {
           debugInfo = " (诊断接口失效)";
         }
         
-        throw new Error(`[V2.7] 服务器响应异常 (${response.status})${debugInfo}。响应片段: ${serverResponseSnippet}...`);
+        throw new Error(`[V3.0] 服务器响应异常 (${response.status})${debugInfo}。响应片段: ${serverResponseSnippet}...`);
       }
 
       if (!response.ok) {
@@ -260,7 +299,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-800">有云错题姐</h1>
-              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v2.7</p>
+              <p className="text-[9px] text-slate-400 font-medium">AI 赋能高效学习 · v3.0</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
