@@ -36,14 +36,81 @@ app.post("/api/analyze", async (req, res) => {
     const { image, grade } = req.body;
     const geminiKey = process.env.GEMINI_API_KEY;
     const qwenKey = process.env.DASHSCOPE_API_KEY;
+    const siliconKey = process.env.SILICONFLOW_API_KEY;
 
-    if (!geminiKey && !qwenKey) {
-      return res.status(500).json({ error: "服务器未配置任何 AI 密钥 (GEMINI_API_KEY 或 DASHSCOPE_API_KEY)。" });
+    if (!geminiKey && !qwenKey && !siliconKey) {
+      return res.status(500).json({ error: "服务器未配置任何 AI 密钥 (GEMINI_API_KEY, DASHSCOPE_API_KEY 或 SILICONFLOW_API_KEY)。" });
     }
 
     const prompt = `你是一个专业的教育专家。请分析这张包含${grade}错题的图片。请提取题目内容、知识点、详细解答，并提供三道不同难度的变式题。`;
 
-    // 优先使用通义千问 (针对国内用户优化)
+    // 1. 优先使用硅基流动 (SiliconFlow) - OpenAI 兼容接口
+    if (siliconKey) {
+      console.log("[DEBUG] Using SiliconFlow Engine (Streaming Mode)");
+      
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      try {
+        const response = await fetch("https://api.siliconflow.cn/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${siliconKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "Qwen/Qwen2-VL-72B-Instruct", // 硅基流动推荐的视觉模型
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: prompt },
+                  { type: "image_url", image_url: { url: image } }
+                ]
+              }
+            ],
+            stream: true,
+            response_format: { type: "json_object" }
+          })
+        });
+
+        if (!response.body) throw new Error("SiliconFlow response body is null");
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+              try {
+                const json = JSON.parse(line.slice(6));
+                const content = json.choices?.[0]?.delta?.content;
+                if (content) {
+                  fullContent += content;
+                  res.write(`data: ${JSON.stringify({ chunk: fullContent })}\n\n`);
+                }
+              } catch (e) { /* 忽略解析错误 */ }
+            }
+          }
+        }
+        
+        res.write(`data: ${JSON.stringify({ done: true, full: fullContent })}\n\n`);
+        res.end();
+        return;
+      } catch (sfError: any) {
+        console.error("[ERROR] SiliconFlow API failed:", sfError);
+        return res.status(500).write(`data: ${JSON.stringify({ error: "硅基流动接口调用失败", details: sfError.message })}\n\n`);
+      }
+    }
+
+    // 2. 次选通义千问 (DashScope)
     if (qwenKey) {
       console.log("[DEBUG] Using Qwen-VL-Max Engine (Streaming Mode)");
       
