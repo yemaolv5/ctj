@@ -180,17 +180,20 @@ export default function App() {
         console.error("Server returned non-JSON response:", text);
         
         // Try to diagnose the issue
+        let debugInfo = "";
         try {
           const debugRes = await fetch("/api/debug");
           const debugData = await debugRes.json();
           if (!debugData.hasApiKey) {
-            throw new Error("服务器未配置 DASHSCOPE_API_KEY，请在环境变量中设置。");
+            debugInfo = " (检测到服务器未配置 API Key)";
+          } else {
+            debugInfo = " (服务器已配置 API Key)";
           }
         } catch (e) {
-          console.error("Debug check failed:", e);
+          debugInfo = " (无法获取诊断信息)";
         }
         
-        throw new Error(`服务器响应异常 (${response.status})。可能是图片过大或配置错误。`);
+        throw new Error(`[V2] 服务器响应异常 (${response.status})${debugInfo}。请尝试缩小裁剪范围。`);
       }
 
       if (!response.ok) {

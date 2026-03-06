@@ -22,6 +22,12 @@ app.post("/api/analyze", async (req, res) => {
     const { image, grade } = req.body;
     const apiKey = process.env.DASHSCOPE_API_KEY;
 
+    console.log("Analyze request received. Grade:", grade);
+    console.log("API Key present:", !!apiKey);
+    if (apiKey) {
+      console.log("API Key prefix:", apiKey.substring(0, 4) + "...");
+    }
+
     if (!apiKey) {
       return res.status(500).json({ error: "DASHSCOPE_API_KEY is not set on the server" });
     }
