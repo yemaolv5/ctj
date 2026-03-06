@@ -43,31 +43,7 @@ app.post("/api/analyze", async (req, res) => {
     // Initialize Gemini inside the request
     const genAI = new GoogleGenAI({ apiKey });
 
-    const prompt = `你是一个专业的教育专家。请分析这张包含${grade}错题的图片。
-请提供以下 JSON 格式的回复：
-{
-  "ocrText": "题目原文内容",
-  "knowledgePoints": ["知识点1", "知识点2"],
-  "solution": "详细的分步解答过程，使用 Markdown 格式",
-  "similarQuestions": [
-    {
-      "difficulty": "简单",
-      "question": "一道类似的简单变式题",
-      "analysis": "该变式题解析"
-    },
-    {
-      "difficulty": "中等",
-      "question": "一道类似的中等难度变式题",
-      "analysis": "该变式题解析"
-    },
-    {
-      "difficulty": "困难",
-      "question": "一道类似的较难变式题",
-      "analysis": "该变式题解析"
-    }
-  ]
-}
-只返回 JSON 内容，不要包含任何 Markdown 代码块标记。`;
+    const prompt = `你是一个专业的教育专家。请分析这张包含${grade}错题的图片。请提取题目内容、知识点、详细解答，并提供三道不同难度的变式题。`;
 
     const matches = image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
     if (!matches || matches.length !== 3) {
@@ -85,7 +61,31 @@ app.post("/api/analyze", async (req, res) => {
             { inlineData: { mimeType, data: base64Data } },
             { text: prompt }
           ]
-        }]
+        }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              ocrText: { type: "STRING" },
+              knowledgePoints: { type: "ARRAY", items: { type: "STRING" } },
+              solution: { type: "STRING" },
+              similarQuestions: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    difficulty: { type: "STRING" },
+                    question: { type: "STRING" },
+                    analysis: { type: "STRING" }
+                  },
+                  required: ["difficulty", "question", "analysis"]
+                }
+              }
+            },
+            required: ["ocrText", "knowledgePoints", "solution", "similarQuestions"]
+          }
+        }
       });
     } catch (apiError: any) {
       console.error("[ERROR] Gemini API call failed:", apiError);
@@ -103,9 +103,9 @@ app.post("/api/analyze", async (req, res) => {
     const responseText = result.text;
     let data;
     try {
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      data = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
+      data = JSON.parse(responseText);
     } catch (e) {
+      console.error("Failed to parse Gemini JSON response:", responseText);
       return res.status(500).json({ error: "解析结果格式错误", raw: responseText });
     }
 
