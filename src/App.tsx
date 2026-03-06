@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from "react";
-import { GoogleGenAI, Type } from "@google/genai";
 import { 
+  ArrowRight,
   Upload, 
   FileText, 
   Loader2, 
@@ -148,85 +148,23 @@ export default function App() {
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      
-      const prompt = `
-        你是一个专业的教育专家。请分析这张包含错题的图片。
-        年级：${grade}
-        
-        请完成以下任务：
-        1. OCR 识别题目文本。
-        2. 提取题目涉及的核心知识点。
-        3. 提供详细的正确解答和分步解析。
-        4. 生成 3 道针对该知识点的变式训练题（难度分别为：易、中、难），并附带解析。
-        
-        请严格按照以下 JSON 格式返回结果：
-        {
-          "ocrText": "题目文本内容",
-          "knowledgePoints": ["知识点1", "知识点2"],
-          "solution": "详细解答内容（支持 Markdown）",
-          "similarQuestions": [
-            {
-              "difficulty": "简单",
-              "question": "变式题1内容",
-              "analysis": "变式题1解析"
-            },
-            {
-              "difficulty": "中等",
-              "question": "变式题2内容",
-              "analysis": "变式题2解析"
-            },
-            {
-              "difficulty": "困难",
-              "question": "变式题3内容",
-              "analysis": "变式题3解析"
-            }
-          ]
-        }
-      `;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              {
-                inlineData: {
-                  mimeType: "image/jpeg",
-                  data: croppedImage.split(",")[1],
-                },
-              },
-            ],
-          },
-        ],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              ocrText: { type: Type.STRING },
-              knowledgePoints: { type: Type.ARRAY, items: { type: Type.STRING } },
-              solution: { type: Type.STRING },
-              similarQuestions: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    difficulty: { type: Type.STRING },
-                    question: { type: Type.STRING },
-                    analysis: { type: Type.STRING },
-                  },
-                  required: ["difficulty", "question", "analysis"],
-                },
-              },
-            },
-            required: ["ocrText", "knowledgePoints", "solution", "similarQuestions"],
-          },
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          image: croppedImage,
+          grade: grade,
+        }),
       });
 
-      const data = JSON.parse(response.text || "{}");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "解析失败，请重试");
+      }
+
+      const data = await response.json();
       setResult(data);
       setStatus("success");
       confetti({
@@ -296,40 +234,73 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main className="max-w-4xl mx-auto px-4 py-4">
         {/* Upload Section */}
-        <section className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm mb-8">
+        <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm mb-6">
           <div className="flex flex-col items-center justify-center">
             {!croppedImage ? (
               <div className="w-full space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <button 
                     onClick={() => cameraInputRef.current?.click()}
-                    className="aspect-square border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-3 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all group"
+                    className="aspect-[4/3] border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-2 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all group"
                   >
-                    <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
-                      <Camera size={24} />
+                    <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
+                      <Camera size={20} />
                     </div>
-                    <p className="font-medium text-slate-600 text-sm">拍照上传</p>
+                    <p className="font-bold text-slate-600 text-xs">拍照上传</p>
                   </button>
                   <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="aspect-square border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-3 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all group"
+                    className="aspect-[4/3] border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-2 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all group"
                   >
-                    <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
-                      <Upload size={24} />
+                    <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
+                      <Upload size={20} />
                     </div>
-                    <p className="font-medium text-slate-600 text-sm">相册选择</p>
+                    <p className="font-bold text-slate-600 text-xs">相册选择</p>
                   </button>
                 </div>
-                <p className="text-center text-xs text-slate-400">提示：裁剪时请尽量只保留题目文字部分，以获得最佳识别效果</p>
+                
+                {/* Compact Instructions */}
+                <div className="pt-3 border-t border-slate-100">
+                  <div className="text-center mb-2">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">操作说明</span>
+                  </div>
+                  <div className="flex items-start justify-between gap-0.5">
+                    <div className="flex-1 text-center">
+                      <div className="text-indigo-600 font-bold text-[10px] mb-0.5 whitespace-nowrap">1. 拍照/上传</div>
+                      <p className="text-slate-500 text-[9px] leading-tight">拍照后获取<br/>精准正解题目</p>
+                    </div>
+                    <div className="pt-1.5 text-slate-300">
+                      <ArrowRight size={10} />
+                    </div>
+                    <div className="flex-1 text-center">
+                      <div className="text-emerald-600 font-bold text-[10px] mb-0.5 whitespace-nowrap">2. 智能解析</div>
+                      <p className="text-slate-500 text-[9px] leading-tight">AI深度分析<br/>知识点及解答</p>
+                    </div>
+                    <div className="pt-1.5 text-slate-300">
+                      <ArrowRight size={10} />
+                    </div>
+                    <div className="flex-1 text-center">
+                      <div className="text-amber-600 font-bold text-[10px] mb-0.5 whitespace-nowrap">3. 举一反三</div>
+                      <p className="text-slate-500 text-[9px] leading-tight">附送3道易中难<br/>等级变式题</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Slogan */}
+                <div className="pt-2 text-center">
+                  <span className="inline-block px-4 py-1.5 bg-indigo-600 rounded-full text-white text-[11px] font-bold shadow-md transform -rotate-1">
+                    姐的错题姐做主
+                  </span>
+                </div>
               </div>
             ) : (
               <div className="w-full relative group">
                 <img 
                   src={croppedImage} 
                   alt="Cropped" 
-                  className="w-full max-h-96 object-contain rounded-xl border border-slate-200"
+                  className="w-full max-h-64 object-contain rounded-xl border border-slate-200"
                 />
                 <div className="absolute top-2 right-2 flex gap-2">
                   <button 
@@ -337,7 +308,7 @@ export default function App() {
                     className="bg-white/90 backdrop-blur-sm shadow-md p-2 rounded-full text-indigo-600 hover:bg-indigo-50 transition-colors"
                     title="重新裁剪"
                   >
-                    <CropIcon size={20} />
+                    <CropIcon size={18} />
                   </button>
                   <button 
                     onClick={() => {
@@ -348,7 +319,7 @@ export default function App() {
                     }}
                     className="bg-white/90 backdrop-blur-sm shadow-md p-2 rounded-full text-slate-600 hover:text-red-500 transition-colors"
                   >
-                    <X size={20} />
+                    <X size={18} />
                   </button>
                 </div>
               </div>
@@ -374,9 +345,9 @@ export default function App() {
             {croppedImage && status !== "loading" && (
               <button 
                 onClick={analyzeQuestion}
-                className="mt-6 w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm"
               >
-                <BrainCircuit size={20} />
+                <BrainCircuit size={18} />
                 解析错题
               </button>
             )}

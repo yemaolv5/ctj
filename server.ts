@@ -9,6 +9,91 @@ const PORT = 3000;
 app.use(express.json({ limit: '50mb' }));
 
 // API routes
+app.post("/api/analyze", async (req, res) => {
+  try {
+    const { image, grade } = req.body;
+    const apiKey = process.env.DASHSCOPE_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({ error: "DASHSCOPE_API_KEY is not set on the server" });
+    }
+
+    const prompt = `你是一个专业的教育专家。请分析这张包含${grade}错题的图片。
+请提供以下 JSON 格式的回复：
+{
+  "ocrText": "题目原文内容",
+  "knowledgePoints": ["知识点1", "知识点2"],
+  "solution": "详细的分步解答过程，使用 Markdown 格式",
+  "similarQuestions": [
+    {
+      "difficulty": "简单",
+      "question": "一道类似的简单变式题",
+      "analysis": "该变式题的解析"
+    },
+    {
+      "difficulty": "中等",
+      "question": "一道类似的中等难度变式题",
+      "analysis": "该变式题的解析"
+    },
+    {
+      "difficulty": "困难",
+      "question": "一道类似的较难变式题",
+      "analysis": "该变式题的解析"
+    }
+  ]
+}
+只返回 JSON 内容，不要包含任何 Markdown 代码块标记或额外文字。`;
+
+    const response = await fetch("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "qwen-vl-max-latest",
+        input: {
+          messages: [
+            {
+              role: "user",
+              content: [
+                { image: image },
+                { text: prompt }
+              ]
+            }
+          ]
+        },
+        parameters: {
+          result_format: "message"
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("DashScope API Error:", errorData);
+      return res.status(response.status).json({ error: "Failed to call Alibaba Cloud API", details: errorData });
+    }
+
+    const data = await response.json();
+    const content = data.output.choices[0].message.content[0].text;
+    
+    // Clean up the response if it contains markdown blocks
+    const jsonStr = content.replace(/```json\n?/, "").replace(/```\n?$/, "").trim();
+    
+    try {
+      const result = JSON.parse(jsonStr);
+      res.json(result);
+    } catch (parseError) {
+      console.error("Failed to parse JSON from model:", content);
+      res.status(500).json({ error: "Failed to parse model response as JSON", raw: content });
+    }
+  } catch (error) {
+    console.error("Error in /api/analyze:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.post("/api/export-word", async (req, res) => {
   try {
     const { grade, ocrText, knowledgePoints, solution, similarQuestions, image } = req.body;
